@@ -195,7 +195,6 @@ async function renderToday() {
   const content = document.getElementById('main-content')!
   const date = todayISO()
   const { day, num, monthYear } = formatDate(date)
-  const cols = users.length
 
   content.innerHTML = `
     <div class="today-date">
@@ -206,7 +205,7 @@ async function renderToday() {
     <div class="inspiration-wrap">
       <button class="btn-inspiration" id="inspire-btn">${t('needInspiration')}</button>
     </div>
-    <div class="columns" id="cols" style="grid-template-columns: repeat(${Math.min(cols, 3)}, 1fr)">
+    <div class="columns" id="cols">
       ${users.map(() => `<div class="col-card"><div class="uploading-indicator"><div class="spinner"></div></div></div>`).join('')}
     </div>`
 
@@ -359,12 +358,11 @@ async function renderPast() {
     }
 
     const dayData = await Promise.all(days.map(d => api<{ date: string; uploads: Record<string, string | null> }>(`/api/uploads/${d}`)))
-    const cols = users.length
 
     list.innerHTML = dayData.map(({ date, uploads }) => `
       <div class="day-row">
         <div class="day-row-label">${formatShort(date)}</div>
-        <div class="day-row-cols" style="grid-template-columns: repeat(${Math.min(cols, 3)}, 1fr)">
+        <div class="day-row-cols">
           ${users.map(u => `
             <div class="past-col">
               <div class="past-col-name">${u}${u === me ? ` <span style="opacity:0.5">(${t('you')})</span>` : ''}</div>
