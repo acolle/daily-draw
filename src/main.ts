@@ -165,7 +165,7 @@ function renderApp() {
   app.innerHTML = `
     <header>
       <h1><a href="/" class="app-title-link">${t('appTitle')}</a></h1>
-      <nav>
+      <nav id="main-nav">
         <button class="nav-btn ${view === 'today' ? 'active' : ''}" id="nav-today">${t('navToday')}</button>
         <button class="nav-btn ${view === 'past' ? 'active' : ''}" id="nav-past">${t('navHistory')}</button>
         <button class="nav-btn ${view === 'settings' ? 'active' : ''}" id="nav-settings">${t('navSettings')}</button>
@@ -180,12 +180,21 @@ function renderApp() {
           </svg>
         </button>
       </div>
+      <button class="hamburger" id="hamburger-btn" aria-label="Menu">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+          <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
+        </svg>
+      </button>
     </header>
     <main id="main-content"></main>`
 
-  document.getElementById('nav-today')!.addEventListener('click', () => { view = 'today'; renderApp() })
-  document.getElementById('nav-past')!.addEventListener('click', () => { view = 'past'; renderApp() })
-  document.getElementById('nav-settings')!.addEventListener('click', () => { view = 'settings'; renderApp() })
+  const mainNav = document.getElementById('main-nav')!
+  document.getElementById('hamburger-btn')!.addEventListener('click', () => mainNav.classList.toggle('open'))
+
+  const navClick = (v: typeof view) => { mainNav.classList.remove('open'); view = v; renderApp() }
+  document.getElementById('nav-today')!.addEventListener('click', () => navClick('today'))
+  document.getElementById('nav-past')!.addEventListener('click', () => navClick('past'))
+  document.getElementById('nav-settings')!.addEventListener('click', () => navClick('settings'))
   document.getElementById('logout-btn')!.addEventListener('click', async () => {
     await api('/api/auth/logout', { method: 'POST' })
     me = null; renderLogin()
