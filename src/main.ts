@@ -169,10 +169,16 @@ function renderApp() {
         <button class="nav-btn ${view === 'today' ? 'active' : ''}" id="nav-today">${t('navToday')}</button>
         <button class="nav-btn ${view === 'past' ? 'active' : ''}" id="nav-past">${t('navHistory')}</button>
         <button class="nav-btn ${view === 'settings' ? 'active' : ''}" id="nav-settings">${t('navSettings')}</button>
+        <button class="nav-btn nav-logout-mobile" id="logout-btn-mobile">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right:0.4rem">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>
+          </svg>
+          ${t('logout')}
+        </button>
       </nav>
       <div class="user-chip">
         <span>${t('welcomePrefix')} <strong>${me}</strong></span>
-        <button class="btn-icon" id="logout-btn" title="${t('logout')}">
+        <button class="btn-icon header-logout" id="logout-btn" title="${t('logout')}">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
             <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
             <polyline points="16 17 21 12 16 7"/>
@@ -191,14 +197,13 @@ function renderApp() {
   const mainNav = document.getElementById('main-nav')!
   document.getElementById('hamburger-btn')!.addEventListener('click', () => mainNav.classList.toggle('open'))
 
+  const doLogout = async () => { await api('/api/auth/logout', { method: 'POST' }); me = null; renderLogin() }
   const navClick = (v: typeof view) => { mainNav.classList.remove('open'); view = v; renderApp() }
   document.getElementById('nav-today')!.addEventListener('click', () => navClick('today'))
   document.getElementById('nav-past')!.addEventListener('click', () => navClick('past'))
   document.getElementById('nav-settings')!.addEventListener('click', () => navClick('settings'))
-  document.getElementById('logout-btn')!.addEventListener('click', async () => {
-    await api('/api/auth/logout', { method: 'POST' })
-    me = null; renderLogin()
-  })
+  document.getElementById('logout-btn')!.addEventListener('click', doLogout)
+  document.getElementById('logout-btn-mobile')!.addEventListener('click', doLogout)
 
   if (view === 'today') renderToday()
   else if (view === 'past') renderPast()
