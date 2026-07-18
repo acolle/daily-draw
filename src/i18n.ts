@@ -45,6 +45,11 @@ const S = {
     incorrectPassword: 'Mot de passe actuel incorrect.',
     languageLabel: 'Langue',
     loginError: 'Identifiants incorrects.',
+    welcomePrefix: 'Bienvenue',
+    needInspirationPrefix: "Besoin d'inspiration ? Visitez",
+    themeSettingsTitle: 'Thèmes des prochains jours',
+    themePlaceholder: 'Thème du jour (optionnel)',
+    themeSaved: 'Thème sauvegardé ✓',
   },
   en: {
     appTitle: 'Daily Draw',
@@ -87,6 +92,11 @@ const S = {
     incorrectPassword: 'Current password is incorrect.',
     languageLabel: 'Language',
     loginError: 'Invalid credentials.',
+    welcomePrefix: 'Welcome',
+    needInspirationPrefix: 'Need inspiration? Visit',
+    themeSettingsTitle: 'Themes for upcoming days',
+    themePlaceholder: 'Daily theme (optional)',
+    themeSaved: 'Theme saved ✓',
   },
 } as const
 

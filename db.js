@@ -16,6 +16,12 @@ db.exec(`
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
 
+  CREATE TABLE IF NOT EXISTS themes (
+    date TEXT PRIMARY KEY,
+    theme TEXT NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
   CREATE TABLE IF NOT EXISTS submissions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL REFERENCES users(id),
@@ -119,10 +125,30 @@ function getAllStreaks() {
   return result
 }
 
+function getTheme(date) {
+  const row = db.prepare('SELECT theme FROM themes WHERE date = ?').get(date)
+  return row ? row.theme : null
+}
+
+function setTheme(date, theme) {
+  if (!theme || !theme.trim()) {
+    db.prepare('DELETE FROM themes WHERE date = ?').run(date)
+  } else {
+    db.prepare('INSERT OR REPLACE INTO themes (date, theme) VALUES (?, ?)').run(date, theme.trim())
+  }
+}
+
+function getThemesForDates(dates) {
+  const result = {}
+  for (const date of dates) result[date] = getTheme(date)
+  return result
+}
+
 module.exports = {
   verifyPassword, seedUser, addUser,
   getUserByUsername, getUserById, getAllUsers,
   updateLanguage, updatePassword,
   recordSubmission, getSubmissionsForDate, getAllDates,
   getStreak, getAllStreaks,
+  getTheme, setTheme, getThemesForDates,
 }

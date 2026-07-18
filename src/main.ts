@@ -164,15 +164,21 @@ function renderLogin() {
 function renderApp() {
   app.innerHTML = `
     <header>
-      <h1>${t('appTitle')}</h1>
+      <h1><a href="/" class="app-title-link">${t('appTitle')}</a></h1>
       <nav>
         <button class="nav-btn ${view === 'today' ? 'active' : ''}" id="nav-today">${t('navToday')}</button>
         <button class="nav-btn ${view === 'past' ? 'active' : ''}" id="nav-past">${t('navHistory')}</button>
         <button class="nav-btn ${view === 'settings' ? 'active' : ''}" id="nav-settings">${t('navSettings')}</button>
       </nav>
       <div class="user-chip">
-        <strong>${me}</strong>
-        <button class="btn btn-ghost" id="logout-btn">${t('logout')}</button>
+        <span>${t('welcomePrefix')} <strong>${me}</strong></span>
+        <button class="btn-icon" id="logout-btn" title="${t('logout')}">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+            <polyline points="16 17 21 12 16 7"/>
+            <line x1="21" y1="12" x2="9" y2="12"/>
+          </svg>
+        </button>
       </div>
     </header>
     <main id="main-content"></main>`
@@ -203,21 +209,24 @@ async function renderToday() {
       <div class="month-year">${monthYear}</div>
     </div>
     <div class="inspiration-wrap">
-      <button class="btn-inspiration" id="inspire-btn">${t('needInspiration')}</button>
+      <span class="inspiration-text">${t('needInspirationPrefix')} <a href="https://peerdiem.com" target="_blank" rel="noopener noreferrer">Peerdiem</a></span>
     </div>
+    <div id="today-theme"></div>
     <div class="columns" id="cols">
       ${users.map(() => `<div class="col-card"><div class="uploading-indicator"><div class="spinner"></div></div></div>`).join('')}
     </div>`
 
-  document.getElementById('inspire-btn')!.addEventListener('click', showInspiration)
-
   try {
     const [uploadData, streakData] = await Promise.all([
-      api<{ uploads: Record<string, string | null> }>(`/api/uploads/${date}`),
+      api<{ uploads: Record<string, string | null>; theme?: string | null }>(`/api/uploads/${date}`),
       api<{ streaks: Record<string, number> }>('/api/streaks'),
     ])
     todayUploads = uploadData.uploads
     streaks = streakData.streaks
+    const themeEl = document.getElementById('today-theme')
+    if (themeEl && uploadData.theme) {
+      themeEl.innerHTML = `<div class="day-theme"><span class="day-theme-badge">${uploadData.theme}</span></div>`
+    }
   } catch {
     todayUploads = {}
     streaks = {}
@@ -239,7 +248,10 @@ function renderColHTML(username: string, imageUrl?: string | null): string {
   } else if (imageUrl) {
     body = `
       <div class="upload-preview">
-        <img src="${imageUrl}" alt="${username}" />
+        <div class="img-wrap" data-url="${imageUrl}">
+          <img src="${imageUrl}" alt="${username}" />
+          <div class="zoom-overlay"><div class="zoom-icon"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/><path d="M11 8v6M8 11h6"/></svg></div></div>
+        </div>
         ${isMe ? `<button class="replace-btn">${t('replace')}</button>` : ''}
       </div>`
   } else if (isMe) {
@@ -313,6 +325,22 @@ async function handleUpload(file: File) {
   }
 }
 
+// ── Lightbox ──────────────────────────────────────────────────────────────────
+function openLightbox(url: string) {
+  document.getElementById('lightbox-overlay')?.remove()
+  const el = document.createElement('div')
+  el.id = 'lightbox-overlay'
+  el.className = 'lightbox-overlay'
+  el.innerHTML = `<img src="${url}" />`
+  document.body.appendChild(el)
+  el.addEventListener('click', () => el.remove())
+}
+
+document.addEventListener('click', e => {
+  const wrap = (e.target as Element).closest<HTMLElement>('.img-wrap')
+  if (wrap?.dataset.url) openLightbox(wrap.dataset.url)
+})
+
 // ── Inspiration ───────────────────────────────────────────────────────────────
 function showInspiration() {
   let prompts = pickRandom(3)
@@ -359,14 +387,19 @@ async function renderPast() {
 
     const dayData = await Promise.all(days.map(d => api<{ date: string; uploads: Record<string, string | null> }>(`/api/uploads/${d}`)))
 
-    list.innerHTML = dayData.map(({ date, uploads }) => `
+    list.innerHTML = dayData.map(({ date, uploads, theme }: { date: string; uploads: Record<string, string | null>; theme?: string | null }) => `
       <div class="day-row">
         <div class="day-row-label">${formatShort(date)}</div>
+        ${theme ? `<div class="day-theme day-theme-mini"><span class="day-theme-badge">${theme}</span></div>` : ''}
         <div class="day-row-cols">
           ${users.map(u => `
             <div class="past-col">
               <div class="past-col-name">${u}${u === me ? ` <span style="opacity:0.5">(${t('you')})</span>` : ''}</div>
-              ${uploads[u] ? `<img src="${uploads[u]}" alt="${u}" />` : `<div class="empty">·</div>`}
+              ${uploads[u] ? `
+                <div class="img-wrap" data-url="${uploads[u]}">
+                  <img src="${uploads[u]}" alt="${u}" />
+                  <div class="zoom-overlay"><div class="zoom-icon"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/><path d="M11 8v6M8 11h6"/></svg></div></div>
+                </div>` : `<div class="empty">·</div>`}
             </div>`).join('')}
         </div>
       </div>`).join('')
@@ -376,11 +409,37 @@ async function renderPast() {
 }
 
 // ── Settings ──────────────────────────────────────────────────────────────────
-function renderSettings() {
+async function renderSettings() {
   const content = document.getElementById('main-content')!
+  const today = todayISO()
+
+  let themesData: Record<string, string | null> = {}
+  try {
+    const res = await api<{ themes: Record<string, string | null> }>('/api/themes/next7')
+    themesData = res.themes
+  } catch { /* ignore */ }
+
+  const dates = Object.keys(themesData)
+
+  const themeRows = dates.map((date, i) => {
+    const { day, num, monthYear } = formatDate(date)
+    const label = i === 0 ? `<span class="theme-date-label today-label">${day} ${num} ${monthYear}</span>`
+      : `<span class="theme-date-label">${day} ${num} ${monthYear}</span>`
+    return `<div class="theme-row" data-date="${date}">
+      ${label}
+      <input class="theme-input" type="text" placeholder="${t('themePlaceholder')}" value="${(themesData[date] ?? '').replace(/"/g, '&quot;')}" data-date="${date}" />
+      <span class="theme-save-msg" style="font-family:sans-serif;font-size:0.72rem;color:var(--accent);min-width:80px"></span>
+    </div>`
+  }).join('')
+
   content.innerHTML = `
     <div class="settings-wrap">
       <h2 class="settings-title">${t('settingsTitle')}</h2>
+
+      <div class="settings-section">
+        <div class="settings-section-title">${t('themeSettingsTitle')}</div>
+        ${themeRows}
+      </div>
 
       <div class="settings-section">
         <div class="settings-section-title">${t('languageLabel')}</div>
@@ -399,6 +458,21 @@ function renderSettings() {
         <div class="settings-msg" id="s-msg"></div>
       </div>
     </div>`
+
+  document.querySelectorAll<HTMLInputElement>('.theme-input').forEach(input => {
+    let saveTimer: ReturnType<typeof setTimeout>
+    input.addEventListener('input', () => {
+      clearTimeout(saveTimer)
+      saveTimer = setTimeout(async () => {
+        const date = input.dataset.date!
+        const msgEl = input.parentElement?.querySelector('.theme-save-msg') as HTMLElement | null
+        try {
+          await api(`/api/themes/${date}`, { method: 'PUT', body: JSON.stringify({ theme: input.value }) })
+          if (msgEl) { msgEl.textContent = t('themeSaved'); setTimeout(() => { msgEl.textContent = '' }, 2000) }
+        } catch { /* ignore */ }
+      }, 600)
+    })
+  })
 
   document.querySelectorAll<HTMLButtonElement>('.lang-btn').forEach(btn => {
     btn.addEventListener('click', async () => {

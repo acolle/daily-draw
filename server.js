@@ -155,7 +155,25 @@ app.get('/api/uploads/:date', requireAuth, async (req, res) => {
   for (const row of rows) {
     uploads[row.username] = s3 ? await getImageUrl(row.r2_key) : null
   }
-  res.json({ date: req.params.date, uploads })
+  const theme = db.getTheme(req.params.date)
+  res.json({ date: req.params.date, uploads, theme })
+})
+
+// ── Themes ────────────────────────────────────────────────────────────────────
+app.get('/api/themes/next7', requireAuth, (req, res) => {
+  const today = todayISO()
+  const dates = []
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(today + 'T12:00:00')
+    d.setDate(d.getDate() + i)
+    dates.push(d.toISOString().split('T')[0])
+  }
+  res.json({ themes: db.getThemesForDates(dates) })
+})
+
+app.put('/api/themes/:date', requireAuth, (req, res) => {
+  db.setTheme(req.params.date, req.body.theme || '')
+  res.json({ ok: true })
 })
 
 // ── Days with submissions ─────────────────────────────────────────────────────
