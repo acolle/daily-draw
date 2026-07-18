@@ -501,9 +501,9 @@ async function renderSettings() {
         ${canInvite ? `
           <div style="margin-top:1rem">
             <div class="settings-section-title">${t('inviteSectionTitle')}</div>
-            <div style="display:flex;gap:0.5rem;align-items:flex-start">
-              <input class="theme-input" id="s-invite-email" type="email" placeholder="${t('inviteEmail')}" style="max-width:220px" />
-              <button class="btn btn-primary" id="s-invite-btn" style="width:auto;margin-top:0">${t('inviteSend')}</button>
+            <div class="input-action-row">
+              <input class="theme-input" id="s-invite-email" type="email" placeholder="${t('inviteEmail')}" />
+              <button class="btn btn-primary" id="s-invite-btn" style="margin-top:0">${t('inviteSend')}</button>
             </div>
             <div class="settings-msg" id="s-invite-msg"></div>
             <div id="s-invite-link" style="display:none;margin-top:0.5rem;font-size:11px">
@@ -516,9 +516,9 @@ async function renderSettings() {
 
       <div class="settings-section">
         <div class="settings-section-title">${t('teamCreate')}</div>
-        <div style="display:flex;gap:0.5rem;align-items:flex-start">
-          <input class="theme-input" id="s-team-name" type="text" placeholder="${t('teamNameLabel')}" style="max-width:220px" />
-          <button class="btn btn-primary" id="s-team-btn" style="width:auto;margin-top:0">${t('teamCreate')}</button>
+        <div class="input-action-row">
+          <input class="theme-input" id="s-team-name" type="text" placeholder="${t('teamNameLabel')}" />
+          <button class="btn btn-primary" id="s-team-btn" style="margin-top:0">${t('teamCreate')}</button>
         </div>
         <div class="settings-msg" id="s-team-msg"></div>
       </div>
