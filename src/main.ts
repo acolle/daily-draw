@@ -526,6 +526,10 @@ async function renderSettings() {
       <div class="settings-section">
         <div class="settings-section-title">${t('themeSettingsTitle')}</div>
         ${themeRows}
+        <div style="margin-top:0.85rem;display:flex;align-items:center;gap:0.75rem">
+          <button class="btn btn-primary" id="s-themes-save" style="max-width:200px">${t('saveThemes')}</button>
+          <span class="settings-msg" id="s-themes-msg"></span>
+        </div>
       </div>
 
       <div class="settings-section">
@@ -546,20 +550,19 @@ async function renderSettings() {
       </div>
     </div>`
 
-  // Theme auto-save
-  document.querySelectorAll<HTMLInputElement>('.theme-input[data-date]').forEach(input => {
-    let saveTimer: ReturnType<typeof setTimeout>
-    input.addEventListener('input', () => {
-      clearTimeout(saveTimer)
-      saveTimer = setTimeout(async () => {
-        const date = input.dataset.date!
-        const msgEl = input.parentElement?.querySelector('.theme-save-msg') as HTMLElement | null
-        try {
-          await api(`/api/themes/${date}`, { method: 'PUT', body: JSON.stringify({ theme: input.value }) })
-          if (msgEl) { msgEl.textContent = t('themeSaved'); setTimeout(() => { msgEl.textContent = '' }, 2000) }
-        } catch { /* ignore */ }
-      }, 600)
-    })
+  // Save all themes on button click
+  document.getElementById('s-themes-save')?.addEventListener('click', async () => {
+    const inputs = document.querySelectorAll<HTMLInputElement>('.theme-input[data-date]')
+    const msg = document.getElementById('s-themes-msg')!
+    try {
+      await Promise.all(Array.from(inputs).map(input =>
+        api(`/api/themes/${input.dataset.date}`, { method: 'PUT', body: JSON.stringify({ theme: input.value }) })
+      ))
+      msg.textContent = t('themeSaved'); msg.className = 'settings-msg success'
+      setTimeout(() => { msg.textContent = '' }, 2500)
+    } catch {
+      msg.textContent = t('errorLoading'); msg.className = 'settings-msg error'
+    }
   })
 
   // Invite
