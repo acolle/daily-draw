@@ -7,6 +7,11 @@ const path = require('path')
 const db = require('./db')
 const { S3Client, PutObjectCommand, GetObjectCommand } = require('@aws-sdk/client-s3')
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner')
+const { Resend } = require('resend')
+
+const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null
+const FROM_EMAIL = process.env.FROM_EMAIL || 'noreply@cirkq.com'
+const APP_URL = process.env.APP_URL || 'https://draw.cirkq.com'
 
 const app = express()
 const PORT = process.env.PORT || 3006
@@ -14,6 +19,7 @@ const PORT = process.env.PORT || 3006
 // Seed initial users from env vars on first run
 db.seedUser(process.env.USER1_NAME, process.env.USER1_PASS)
 db.seedUser(process.env.USER2_NAME, process.env.USER2_PASS)
+db.seedDefaultTeam()
 
 let s3 = null
 if (process.env.R2_ACCOUNT_ID && process.env.R2_ACCESS_KEY_ID) {
@@ -108,7 +114,11 @@ app.put('/api/account/password', requireAuth, (req, res) => {
 })
 
 // ── Users ─────────────────────────────────────────────────────────────────────
-app.get('/api/users', requireAuth, (_req, res) => {
+app.get('/api/users', requireAuth, (req, res) => {
+  const teamId = req.query.team ? parseInt(req.query.team) : null
+  if (teamId && db.isUserInTeam(teamId, req.session.userId)) {
+    return res.json({ users: db.getTeamUsers(teamId).map(u => u.username) })
+  }
   res.json({ users: db.getAllUsers().map(u => u.username) })
 })
 
@@ -124,7 +134,11 @@ app.post('/api/admin/users', requireAdmin, (req, res) => {
 })
 
 // ── Streaks ───────────────────────────────────────────────────────────────────
-app.get('/api/streaks', requireAuth, (_req, res) => {
+app.get('/api/streaks', requireAuth, (req, res) => {
+  const teamId = req.query.team ? parseInt(req.query.team) : null
+  if (teamId && db.isUserInTeam(teamId, req.session.userId)) {
+    return res.json({ streaks: db.getTeamStreaks(teamId) })
+  }
   res.json({ streaks: db.getAllStreaks() })
 })
 
@@ -150,7 +164,10 @@ app.post('/api/upload', requireAuth, upload.single('image'), async (req, res) =>
 
 // ── Uploads for a date ────────────────────────────────────────────────────────
 app.get('/api/uploads/:date', requireAuth, async (req, res) => {
-  const rows = db.getSubmissionsForDate(req.params.date)
+  const teamId = req.query.team ? parseInt(req.query.team) : null
+  const rows = (teamId && db.isUserInTeam(teamId, req.session.userId))
+    ? db.getTeamSubmissionsForDate(teamId, req.params.date)
+    : db.getSubmissionsForDate(req.params.date)
   const uploads = {}
   for (const row of rows) {
     uploads[row.username] = s3 ? await getImageUrl(row.r2_key) : null
@@ -177,10 +194,103 @@ app.put('/api/themes/:date', requireAuth, (req, res) => {
 })
 
 // ── Days with submissions ─────────────────────────────────────────────────────
-app.get('/api/days', requireAuth, (_req, res) => {
+app.get('/api/days', requireAuth, (req, res) => {
   const today = todayISO()
-  const days = db.getAllDates().filter(d => d !== today)
-  res.json({ days })
+  const teamId = req.query.team ? parseInt(req.query.team) : null
+  const allDates = (teamId && db.isUserInTeam(teamId, req.session.userId))
+    ? db.getTeamDates(teamId)
+    : db.getAllDates()
+  res.json({ days: allDates.filter(d => d !== today) })
+})
+
+// ── Teams ─────────────────────────────────────────────────────────────────────
+app.get('/api/teams', requireAuth, (req, res) => {
+  res.json({ teams: db.getTeamsForUser(req.session.userId) })
+})
+
+app.post('/api/teams', requireAuth, (req, res) => {
+  const { name } = req.body
+  if (!name?.trim()) return res.status(400).json({ error: 'Team name required' })
+  const teamId = db.createTeam(name.trim())
+  db.addUserToTeam(teamId, req.session.userId, 'owner')
+  res.json({ ok: true, teamId })
+})
+
+app.get('/api/teams/:id/members', requireAuth, (req, res) => {
+  const teamId = parseInt(req.params.id)
+  if (!db.isUserInTeam(teamId, req.session.userId)) return res.status(403).json({ error: 'Forbidden' })
+  res.json({ members: db.getTeamMembers(teamId), count: db.getTeamMemberCount(teamId) })
+})
+
+app.post('/api/teams/:id/invite', requireAuth, async (req, res) => {
+  const teamId = parseInt(req.params.id)
+  if (!db.isUserInTeam(teamId, req.session.userId)) return res.status(403).json({ error: 'Forbidden' })
+  const { email } = req.body
+  if (!email?.includes('@')) return res.status(400).json({ error: 'Valid email required' })
+  if (db.getTeamMemberCount(teamId) >= 4) return res.status(400).json({ error: 'Team is full (max 4 members)' })
+
+  const team = db.getTeamById(teamId)
+  const token = db.createInvite(teamId, email, req.session.userId)
+  const inviteUrl = `${APP_URL}/invite/${token}`
+
+  if (resend) {
+    try {
+      await resend.emails.send({
+        from: FROM_EMAIL,
+        to: email,
+        subject: `You've been invited to join ${team.name} on Daily Draw`,
+        html: `<p>You've been invited to join <strong>${team.name}</strong> on Daily Draw.</p>
+               <p><a href="${inviteUrl}">Accept invitation →</a></p>
+               <p style="color:#999;font-size:12px">This link expires in 7 days.</p>`,
+      })
+    } catch (e) {
+      console.error('[resend]', e)
+    }
+  }
+
+  res.json({ ok: true, inviteUrl })
+})
+
+// ── Invites (public) ──────────────────────────────────────────────────────────
+app.get('/api/invite/:token', (req, res) => {
+  const invite = db.getInviteByToken(req.params.token)
+  if (!invite || invite.used_at || new Date(invite.expires_at) < new Date()) {
+    return res.status(410).json({ error: 'Invalid or expired invite' })
+  }
+  const team = db.getTeamById(invite.team_id)
+  res.json({ email: invite.email, teamName: team.name, teamId: invite.team_id })
+})
+
+app.post('/api/invite/:token/accept', (req, res) => {
+  const invite = db.getInviteByToken(req.params.token)
+  if (!invite || invite.used_at || new Date(invite.expires_at) < new Date()) {
+    return res.status(410).json({ error: 'Invalid or expired invite' })
+  }
+  if (db.getTeamMemberCount(invite.team_id) >= 4) {
+    return res.status(400).json({ error: 'Team is full' })
+  }
+  const { username, password } = req.body
+  if (!username?.trim() || !password || password.length < 6) {
+    return res.status(400).json({ error: 'Username and password (min 6 chars) required' })
+  }
+  let user = db.getUserByUsername(username.trim())
+  if (!user) {
+    try {
+      db.addUser(username.trim(), password)
+      user = db.getUserByUsername(username.trim())
+    } catch {
+      return res.status(409).json({ error: 'Username already taken' })
+    }
+  } else {
+    if (!db.verifyPassword(password, user.password_hash, user.password_salt)) {
+      return res.status(401).json({ error: 'Incorrect password for existing account' })
+    }
+  }
+  db.addUserToTeam(invite.team_id, user.id, 'member')
+  db.useInvite(req.params.token)
+  req.session.userId = user.id
+  req.session.username = user.username
+  res.json({ ok: true, username: user.username, language: user.language })
 })
 
 // Serve built frontend in production

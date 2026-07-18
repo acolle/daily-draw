@@ -73,6 +73,10 @@ let view: 'today' | 'past' | 'settings' = 'today'
 let streaks: Record<string, number> = {}
 let todayUploads: Record<string, string | null> = {}
 let uploading = false
+let teams: Array<{ id: number; name: string; role: string }> = []
+let activeTeamId: number | null = null
+
+function teamQuery() { return activeTeamId ? `?team=${activeTeamId}` : '' }
 
 const app = document.getElementById('app')!
 const fileInput = document.getElementById('file-input') as HTMLInputElement
@@ -110,10 +114,14 @@ function pickRandom(n: number): string[] {
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 async function init() {
+  const inviteMatch = window.location.pathname.match(/^\/invite\/([a-f0-9]{64})$/)
+  if (inviteMatch) { renderInviteAccept(inviteMatch[1]); return }
+
   try {
     const data = await api<{ username: string; language: string }>('/api/auth/me')
     me = data.username
     setLang((data.language as Lang) || 'fr')
+    await loadTeams()
     await loadUsers()
     renderApp()
   } catch {
@@ -121,8 +129,15 @@ async function init() {
   }
 }
 
+async function loadTeams() {
+  const data = await api<{ teams: typeof teams }>('/api/teams')
+  teams = data.teams
+  const stored = parseInt(localStorage.getItem('activeTeamId') || '')
+  activeTeamId = teams.find(t => t.id === stored) ? stored : (teams[0]?.id ?? null)
+}
+
 async function loadUsers() {
-  const data = await api<{ users: string[] }>('/api/users')
+  const data = await api<{ users: string[] }>(`/api/users${teamQuery()}`)
   users = data.users
 }
 
@@ -150,6 +165,7 @@ function renderLogin() {
       })
       me = data.username
       setLang((data.language as Lang) || 'fr')
+      await loadTeams()
       await loadUsers()
       renderApp()
     } catch {
@@ -162,9 +178,15 @@ function renderLogin() {
 
 // ── App shell ─────────────────────────────────────────────────────────────────
 function renderApp() {
+  const activeTeamName = teams.find(t => t.id === activeTeamId)?.name ?? ''
+  const teamSelectHtml = teams.length > 1
+    ? `<select class="team-select" id="team-select">${teams.map(t => `<option value="${t.id}"${t.id === activeTeamId ? ' selected' : ''}>${t.name}</option>`).join('')}</select>`
+    : `<span class="team-name-chip">${activeTeamName}</span>`
+
   app.innerHTML = `
     <header>
       <h1><a href="/" class="app-title-link">${t('appTitle')}</a></h1>
+      ${teamSelectHtml}
       <nav id="main-nav">
         <button class="nav-btn ${view === 'today' ? 'active' : ''}" id="nav-today">${t('navToday')}</button>
         <button class="nav-btn ${view === 'past' ? 'active' : ''}" id="nav-past">${t('navHistory')}</button>
@@ -196,6 +218,13 @@ function renderApp() {
 
   const mainNav = document.getElementById('main-nav')!
   document.getElementById('hamburger-btn')!.addEventListener('click', () => mainNav.classList.toggle('open'))
+
+  document.getElementById('team-select')?.addEventListener('change', async (e) => {
+    activeTeamId = parseInt((e.target as HTMLSelectElement).value)
+    localStorage.setItem('activeTeamId', String(activeTeamId))
+    await loadUsers()
+    renderApp()
+  })
 
   const doLogout = async () => { await api('/api/auth/logout', { method: 'POST' }); me = null; renderLogin() }
   const navClick = (v: typeof view) => { mainNav.classList.remove('open'); view = v; renderApp() }
@@ -232,8 +261,8 @@ async function renderToday() {
 
   try {
     const [uploadData, streakData] = await Promise.all([
-      api<{ uploads: Record<string, string | null>; theme?: string | null }>(`/api/uploads/${date}`),
-      api<{ streaks: Record<string, number> }>('/api/streaks'),
+      api<{ uploads: Record<string, string | null>; theme?: string | null }>(`/api/uploads/${date}${teamQuery()}`),
+      api<{ streaks: Record<string, number> }>(`/api/streaks${teamQuery()}`),
     ])
     todayUploads = uploadData.uploads
     streaks = streakData.streaks
@@ -325,7 +354,7 @@ async function handleUpload(file: File) {
     uploading = false
     const [uploadData, streakData] = await Promise.all([
       api<{ uploads: Record<string, string | null> }>(`/api/uploads/${todayISO()}`),
-      api<{ streaks: Record<string, number> }>('/api/streaks'),
+      api<{ streaks: Record<string, number> }>(`/api/streaks${teamQuery()}`),
     ])
     todayUploads = uploadData.uploads
     streaks = streakData.streaks
@@ -391,7 +420,7 @@ async function renderPast() {
     <div id="past-list"><div style="text-align:center;padding:3rem"><div class="spinner" style="margin:auto"></div></div></div>`
 
   try {
-    const { days } = await api<{ days: string[] }>('/api/days')
+    const { days } = await api<{ days: string[] }>(`/api/days${teamQuery()}`)
     const list = document.getElementById('past-list')!
 
     if (!days.length) {
@@ -399,7 +428,7 @@ async function renderPast() {
       return
     }
 
-    const dayData = await Promise.all(days.map(d => api<{ date: string; uploads: Record<string, string | null> }>(`/api/uploads/${d}`)))
+    const dayData = await Promise.all(days.map(d => api<{ date: string; uploads: Record<string, string | null> }>(`/api/uploads/${d}${teamQuery()}`)))
 
     list.innerHTML = dayData.map(({ date, uploads, theme }: { date: string; uploads: Record<string, string | null>; theme?: string | null }) => `
       <div class="day-row">
@@ -425,16 +454,22 @@ async function renderPast() {
 // ── Settings ──────────────────────────────────────────────────────────────────
 async function renderSettings() {
   const content = document.getElementById('main-content')!
-  const today = todayISO()
 
+  // Fetch themes + team members in parallel
   let themesData: Record<string, string | null> = {}
+  let members: Array<{ id: number; username: string; role: string }> = []
+  let memberCount = 0
   try {
-    const res = await api<{ themes: Record<string, string | null> }>('/api/themes/next7')
-    themesData = res.themes
+    const [themeRes, memberRes] = await Promise.all([
+      api<{ themes: Record<string, string | null> }>('/api/themes/next7'),
+      activeTeamId ? api<{ members: typeof members; count: number }>(`/api/teams/${activeTeamId}/members`) : Promise.resolve({ members: [], count: 0 }),
+    ])
+    themesData = themeRes.themes
+    members = memberRes.members
+    memberCount = memberRes.count
   } catch { /* ignore */ }
 
   const dates = Object.keys(themesData)
-
   const themeRows = dates.map((date, i) => {
     const { day, num, monthYear } = formatDate(date)
     const label = i === 0 ? `<span class="theme-date-label today-label">${day} ${num} ${monthYear}</span>`
@@ -442,13 +477,51 @@ async function renderSettings() {
     return `<div class="theme-row" data-date="${date}">
       ${label}
       <input class="theme-input" type="text" placeholder="${t('themePlaceholder')}" value="${(themesData[date] ?? '').replace(/"/g, '&quot;')}" data-date="${date}" />
-      <span class="theme-save-msg" style="font-family:sans-serif;font-size:0.72rem;color:var(--accent);min-width:80px"></span>
+      <span class="theme-save-msg" style="font-size:0.72rem;color:var(--text);min-width:80px"></span>
     </div>`
   }).join('')
+
+  const memberRows = members.map(m => `
+    <div class="member-row">
+      <span class="member-name">${m.username}</span>
+      <span class="role-badge">${t(m.role === 'owner' ? 'roleOwner' : 'roleMember')}</span>
+    </div>`).join('')
+
+  const teamName = teams.find(t => t.id === activeTeamId)?.name ?? ''
+  const canInvite = memberCount < 4
 
   content.innerHTML = `
     <div class="settings-wrap">
       <h2 class="settings-title">${t('settingsTitle')}</h2>
+
+      ${activeTeamId ? `
+      <div class="settings-section">
+        <div class="settings-section-title">${t('teamLabel')} — ${teamName}</div>
+        <div class="member-list">${memberRows}</div>
+        ${canInvite ? `
+          <div style="margin-top:1rem">
+            <div class="settings-section-title">${t('inviteSectionTitle')}</div>
+            <div style="display:flex;gap:0.5rem;align-items:flex-start">
+              <input class="theme-input" id="s-invite-email" type="email" placeholder="${t('inviteEmail')}" style="max-width:220px" />
+              <button class="btn btn-primary" id="s-invite-btn" style="width:auto;margin-top:0">${t('inviteSend')}</button>
+            </div>
+            <div class="settings-msg" id="s-invite-msg"></div>
+            <div id="s-invite-link" style="display:none;margin-top:0.5rem;font-size:11px">
+              <span id="s-invite-url" style="word-break:break-all;color:var(--text-muted)"></span>
+              <button class="btn btn-ghost" id="s-copy-link" style="margin-left:0.5rem;padding:0.2rem 0.6rem">${t('inviteCopyLink')}</button>
+            </div>
+          </div>
+        ` : `<p class="settings-msg" style="margin-top:0.75rem">${t('teamFull')}</p>`}
+      </div>` : ''}
+
+      <div class="settings-section">
+        <div class="settings-section-title">${t('teamCreate')}</div>
+        <div style="display:flex;gap:0.5rem;align-items:flex-start">
+          <input class="theme-input" id="s-team-name" type="text" placeholder="${t('teamNameLabel')}" style="max-width:220px" />
+          <button class="btn btn-primary" id="s-team-btn" style="width:auto;margin-top:0">${t('teamCreate')}</button>
+        </div>
+        <div class="settings-msg" id="s-team-msg"></div>
+      </div>
 
       <div class="settings-section">
         <div class="settings-section-title">${t('themeSettingsTitle')}</div>
@@ -473,7 +546,8 @@ async function renderSettings() {
       </div>
     </div>`
 
-  document.querySelectorAll<HTMLInputElement>('.theme-input').forEach(input => {
+  // Theme auto-save
+  document.querySelectorAll<HTMLInputElement>('.theme-input[data-date]').forEach(input => {
     let saveTimer: ReturnType<typeof setTimeout>
     input.addEventListener('input', () => {
       clearTimeout(saveTimer)
@@ -488,6 +562,52 @@ async function renderSettings() {
     })
   })
 
+  // Invite
+  document.getElementById('s-invite-btn')?.addEventListener('click', async () => {
+    const email = (document.getElementById('s-invite-email') as HTMLInputElement).value.trim()
+    const msg = document.getElementById('s-invite-msg')!
+    if (!email.includes('@')) { msg.textContent = t('inviteEmail'); msg.className = 'settings-msg error'; return }
+    try {
+      const res = await api<{ ok: boolean; inviteUrl: string }>(`/api/teams/${activeTeamId}/invite`, {
+        method: 'POST', body: JSON.stringify({ email })
+      })
+      msg.textContent = t('inviteSent'); msg.className = 'settings-msg success'
+      const linkEl = document.getElementById('s-invite-link')!
+      const urlEl = document.getElementById('s-invite-url')!
+      linkEl.style.display = 'block'
+      urlEl.textContent = res.inviteUrl
+    } catch (e: unknown) {
+      msg.textContent = e instanceof Error ? e.message : ''; msg.className = 'settings-msg error'
+    }
+  })
+
+  document.getElementById('s-copy-link')?.addEventListener('click', () => {
+    const url = document.getElementById('s-invite-url')?.textContent || ''
+    navigator.clipboard.writeText(url).then(() => {
+      const btn = document.getElementById('s-copy-link')!
+      btn.textContent = t('inviteLinkCopied')
+      setTimeout(() => { btn.textContent = t('inviteCopyLink') }, 2000)
+    })
+  })
+
+  // Create team
+  document.getElementById('s-team-btn')?.addEventListener('click', async () => {
+    const name = (document.getElementById('s-team-name') as HTMLInputElement).value.trim()
+    const msg = document.getElementById('s-team-msg')!
+    if (!name) { msg.textContent = t('teamNameRequired'); msg.className = 'settings-msg error'; return }
+    try {
+      const res = await api<{ ok: boolean; teamId: number }>('/api/teams', { method: 'POST', body: JSON.stringify({ name }) })
+      activeTeamId = res.teamId
+      localStorage.setItem('activeTeamId', String(activeTeamId))
+      await loadTeams()
+      await loadUsers()
+      renderApp()
+    } catch (e: unknown) {
+      msg.textContent = e instanceof Error ? e.message : ''; msg.className = 'settings-msg error'
+    }
+  })
+
+  // Language
   document.querySelectorAll<HTMLButtonElement>('.lang-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
       const newLang = btn.dataset.lang as Lang
@@ -497,19 +617,17 @@ async function renderSettings() {
     })
   })
 
+  // Password
   document.getElementById('s-save')!.addEventListener('click', async () => {
     const old = (document.getElementById('s-old') as HTMLInputElement).value
     const next = (document.getElementById('s-new') as HTMLInputElement).value
     const conf = (document.getElementById('s-conf') as HTMLInputElement).value
     const msg = document.getElementById('s-msg')!
-
     if (next !== conf) { msg.textContent = t('passwordMismatch'); msg.className = 'settings-msg error'; return }
     if (next.length < 6) { msg.textContent = t('passwordTooShort'); msg.className = 'settings-msg error'; return }
-
     try {
       await api('/api/account/password', { method: 'PUT', body: JSON.stringify({ currentPassword: old, newPassword: next }) })
-      msg.textContent = t('passwordChanged')
-      msg.className = 'settings-msg success';
+      msg.textContent = t('passwordChanged'); msg.className = 'settings-msg success';
       (document.getElementById('s-old') as HTMLInputElement).value = '';
       (document.getElementById('s-new') as HTMLInputElement).value = '';
       (document.getElementById('s-conf') as HTMLInputElement).value = ''
@@ -519,6 +637,55 @@ async function renderSettings() {
       msg.className = 'settings-msg error'
     }
   })
+}
+
+// ── Invite acceptance ─────────────────────────────────────────────────────────
+async function renderInviteAccept(token: string) {
+  app.innerHTML = `<div class="login-wrap"><div class="login-card" style="text-align:center"><div class="spinner" style="margin:auto"></div></div></div>`
+  try {
+    const info = await api<{ email: string; teamName: string }>(`/api/invite/${token}`)
+    app.innerHTML = `
+      <div class="login-wrap">
+        <div class="login-card">
+          <h1>${t('appTitle')}</h1>
+          <p>${t('inviteAcceptHeading')} — <strong>${info.teamName}</strong></p>
+          <div class="field"><label>${t('username')}</label><input id="inv-user" type="text" autocomplete="username" /></div>
+          <div class="field"><label>${t('password')}</label><input id="inv-pass" type="password" autocomplete="new-password" /></div>
+          <div class="field"><label>${t('confirmPassword')}</label><input id="inv-conf" type="password" autocomplete="new-password" /></div>
+          <button class="btn btn-primary" id="inv-btn">${t('inviteJoin')}</button>
+          <div class="error-msg" id="inv-err"></div>
+        </div>
+      </div>`
+    document.getElementById('inv-btn')!.addEventListener('click', async () => {
+      const username = (document.getElementById('inv-user') as HTMLInputElement).value.trim()
+      const pass = (document.getElementById('inv-pass') as HTMLInputElement).value
+      const conf = (document.getElementById('inv-conf') as HTMLInputElement).value
+      const err = document.getElementById('inv-err')!
+      if (pass !== conf) { err.textContent = t('passwordMismatch'); return }
+      if (pass.length < 6) { err.textContent = t('passwordTooShort'); return }
+      try {
+        const data = await api<{ username: string; language: string }>(`/api/invite/${token}/accept`, {
+          method: 'POST', body: JSON.stringify({ username, password: pass })
+        })
+        me = data.username
+        setLang((data.language as Lang) || 'fr')
+        window.history.replaceState({}, '', '/')
+        await loadTeams()
+        await loadUsers()
+        renderApp()
+      } catch (e: unknown) {
+        err.textContent = e instanceof Error ? e.message : t('loginError')
+      }
+    })
+  } catch {
+    app.innerHTML = `
+      <div class="login-wrap">
+        <div class="login-card" style="text-align:center">
+          <h1>${t('appTitle')}</h1>
+          <p style="color:var(--danger);margin-top:1rem">${t('inviteInvalid')}</p>
+        </div>
+      </div>`
+  }
 }
 
 init()

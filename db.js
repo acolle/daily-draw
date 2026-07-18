@@ -7,6 +7,31 @@ const path = require('path')
 const db = new DatabaseSync(path.join(__dirname, 'data.db'))
 
 db.exec(`
+  CREATE TABLE IF NOT EXISTS teams (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS team_members (
+    team_id INTEGER NOT NULL REFERENCES teams(id),
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    role TEXT NOT NULL DEFAULT 'member',
+    joined_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (team_id, user_id)
+  );
+
+  CREATE TABLE IF NOT EXISTS invites (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    token TEXT UNIQUE NOT NULL,
+    team_id INTEGER NOT NULL REFERENCES teams(id),
+    email TEXT NOT NULL,
+    invited_by INTEGER NOT NULL REFERENCES users(id),
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    expires_at TEXT NOT NULL,
+    used_at TEXT
+  );
+
   CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     username TEXT UNIQUE NOT NULL COLLATE NOCASE,
@@ -125,6 +150,104 @@ function getAllStreaks() {
   return result
 }
 
+// ── Teams ─────────────────────────────────────────────────────────────────────
+function createTeam(name) {
+  const result = db.prepare('INSERT INTO teams (name) VALUES (?)').run(name)
+  return result.lastInsertRowid
+}
+
+function getTeamById(id) {
+  return db.prepare('SELECT * FROM teams WHERE id = ?').get(id)
+}
+
+function getTeamsForUser(userId) {
+  return db.prepare(`
+    SELECT t.id, t.name, tm.role
+    FROM teams t JOIN team_members tm ON tm.team_id = t.id
+    WHERE tm.user_id = ? ORDER BY t.id
+  `).all(userId)
+}
+
+function getTeamMembers(teamId) {
+  return db.prepare(`
+    SELECT u.id, u.username, tm.role
+    FROM users u JOIN team_members tm ON tm.user_id = u.id
+    WHERE tm.team_id = ? ORDER BY u.id
+  `).all(teamId)
+}
+
+function getTeamMemberCount(teamId) {
+  return db.prepare('SELECT COUNT(*) as count FROM team_members WHERE team_id = ?').get(teamId).count
+}
+
+function addUserToTeam(teamId, userId, role = 'member') {
+  db.prepare('INSERT OR IGNORE INTO team_members (team_id, user_id, role) VALUES (?, ?, ?)').run(teamId, userId, role)
+}
+
+function isUserInTeam(teamId, userId) {
+  return !!db.prepare('SELECT 1 FROM team_members WHERE team_id = ? AND user_id = ?').get(teamId, userId)
+}
+
+function getTeamUsers(teamId) {
+  return db.prepare(`
+    SELECT u.id, u.username FROM users u
+    JOIN team_members tm ON tm.user_id = u.id
+    WHERE tm.team_id = ? ORDER BY u.id
+  `).all(teamId)
+}
+
+function getTeamStreaks(teamId) {
+  const members = getTeamUsers(teamId)
+  const result = {}
+  for (const u of members) result[u.username] = getStreak(u.id)
+  return result
+}
+
+function getTeamSubmissionsForDate(teamId, date) {
+  return db.prepare(`
+    SELECT u.username, s.r2_key FROM submissions s
+    JOIN users u ON u.id = s.user_id
+    JOIN team_members tm ON tm.user_id = u.id AND tm.team_id = ?
+    WHERE s.date = ?
+  `).all(teamId, date)
+}
+
+function getTeamDates(teamId) {
+  return db.prepare(`
+    SELECT DISTINCT s.date FROM submissions s
+    JOIN team_members tm ON tm.user_id = s.user_id AND tm.team_id = ?
+    ORDER BY s.date DESC
+  `).all(teamId).map(r => r.date)
+}
+
+function seedDefaultTeam() {
+  const teamCount = db.prepare('SELECT COUNT(*) as count FROM teams').get().count
+  if (teamCount > 0) return
+  const users = getAllUsers()
+  if (!users.length) return
+  const teamId = createTeam('Daily Draw')
+  users.forEach((u, i) => addUserToTeam(teamId, u.id, i === 0 ? 'owner' : 'member'))
+  console.log(`[db] seeded default team (id=${teamId}) with ${users.length} member(s)`)
+}
+
+// ── Invites ───────────────────────────────────────────────────────────────────
+function createInvite(teamId, email, invitedBy) {
+  const token = randomBytes(32).toString('hex')
+  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+  db.prepare('INSERT INTO invites (token, team_id, email, invited_by, expires_at) VALUES (?, ?, ?, ?, ?)')
+    .run(token, teamId, email, invitedBy, expiresAt)
+  return token
+}
+
+function getInviteByToken(token) {
+  return db.prepare('SELECT * FROM invites WHERE token = ?').get(token)
+}
+
+function useInvite(token) {
+  db.prepare("UPDATE invites SET used_at = datetime('now') WHERE token = ?").run(token)
+}
+
+// ── Themes ────────────────────────────────────────────────────────────────────
 function getTheme(date) {
   const row = db.prepare('SELECT theme FROM themes WHERE date = ?').get(date)
   return row ? row.theme : null
@@ -151,4 +274,8 @@ module.exports = {
   recordSubmission, getSubmissionsForDate, getAllDates,
   getStreak, getAllStreaks,
   getTheme, setTheme, getThemesForDates,
+  createTeam, getTeamById, getTeamsForUser, getTeamMembers, getTeamMemberCount,
+  addUserToTeam, isUserInTeam, getTeamUsers, getTeamStreaks,
+  getTeamSubmissionsForDate, getTeamDates, seedDefaultTeam,
+  createInvite, getInviteByToken, useInvite,
 }

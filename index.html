@@ -95,6 +95,20 @@
       transition: color 0.15s;
     }
     .btn-icon:hover { color: var(--text); }
+    .team-select {
+      font-family: inherit; font-size: 11px; color: var(--text); background: var(--bg);
+      border: 1px solid var(--border); border-radius: var(--radius);
+      padding: 0.25rem 0.5rem; cursor: pointer; outline: none; max-width: 130px;
+    }
+    .team-name-chip {
+      font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;
+      border: 1px solid var(--border); border-radius: var(--radius); padding: 0.25rem 0.6rem;
+    }
+    .member-list { display: flex; flex-direction: column; gap: 0.3rem; }
+    .member-row { display: flex; align-items: center; justify-content: space-between; padding: 0.35rem 0; border-bottom: 1px solid var(--border); }
+    .member-row:last-child { border-bottom: none; }
+    .member-name { font-size: 12px; }
+    .role-badge { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
     .hamburger {
       display: none; background: transparent; border: none; cursor: pointer;
       color: var(--text); padding: 0.25rem; border-radius: var(--radius);
