@@ -125,7 +125,7 @@ async function init() {
     await loadUsers()
     renderApp()
   } catch {
-    renderLogin()
+    renderLanding()
   }
 }
 
@@ -139,6 +139,49 @@ async function loadTeams() {
 async function loadUsers() {
   const data = await api<{ users: string[] }>(`/api/users${teamQuery()}`)
   users = data.users
+}
+
+const PENCIL_ICON = `<svg class="app-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>`
+
+// ── Landing ───────────────────────────────────────────────────────────────────
+function renderLanding() {
+  app.innerHTML = `
+    <div class="landing">
+      <header class="landing-header">
+        <div class="landing-logo">${PENCIL_ICON} ${t('appTitle')}</div>
+        <button class="btn btn-ghost" id="landing-login-btn">${t('login')}</button>
+      </header>
+      <main class="landing-main">
+        <div class="landing-hero">
+          <p class="landing-eyebrow">✦ Daily drawing habit tracker</p>
+          <h1 class="landing-title">Draw something.<br>Every single day.</h1>
+          <p class="landing-subtitle">Five minutes a day doesn't sound like much — but 5 minutes × 365 days is over 30 hours of practice. You'll be amazed what happens when you just show up.</p>
+          <button class="btn btn-primary landing-cta" id="landing-cta-btn">${t('login')} →</button>
+        </div>
+        <div class="landing-benefits">
+          <div class="benefit">
+            <div class="benefit-num">01 — Habit</div>
+            <h3>Even 5 minutes counts.</h3>
+            <p>A quick sketch before bed still counts. You don't need a full session to make progress — just don't break the streak.</p>
+          </div>
+          <div class="benefit">
+            <div class="benefit-num">02 — Accountability</div>
+            <h3>Your friends will notice.</h3>
+            <p>When your team sees your upload every day, skipping suddenly feels much harder. In the best possible way.</p>
+          </div>
+          <div class="benefit">
+            <div class="benefit-num">03 — Progress</div>
+            <h3>Watch yourself grow.</h3>
+            <p>Scroll back through your archive in six months. The difference will surprise you — and motivate you to keep going.</p>
+          </div>
+        </div>
+        <p class="landing-note">Invite-only — ask a friend to add you to their team.</p>
+      </main>
+    </div>`
+
+  const goLogin = () => renderLogin()
+  document.getElementById('landing-login-btn')!.addEventListener('click', goLogin)
+  document.getElementById('landing-cta-btn')!.addEventListener('click', goLogin)
 }
 
 // ── Login ─────────────────────────────────────────────────────────────────────
@@ -185,7 +228,7 @@ function renderApp() {
 
   app.innerHTML = `
     <header>
-      <h1><a href="/" class="app-title-link">${t('appTitle')}</a></h1>
+      <h1><a href="/" class="app-title-link">${PENCIL_ICON}${t('appTitle')}</a></h1>
       ${teamSelectHtml}
       <nav id="main-nav">
         <button class="nav-btn ${view === 'today' ? 'active' : ''}" id="nav-today">${t('navToday')}</button>

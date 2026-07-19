@@ -323,6 +323,34 @@
     .spinner { display: inline-block; width: 14px; height: 14px; border: 1px solid var(--border); border-top-color: var(--text); border-radius: 50%; animation: spin 0.7s linear infinite; }
     @keyframes spin { to { transform: rotate(360deg); } }
 
+    /* ── App icon ── */
+    .app-icon { display: inline-flex; align-items: center; vertical-align: middle; margin-right: 0.4rem; }
+
+    /* ── Landing ── */
+    .landing { min-height: 100vh; display: flex; flex-direction: column; background: var(--bg); }
+    .landing-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 1rem 2rem; border-bottom: 1px solid var(--border);
+    }
+    .landing-logo { display: flex; align-items: center; gap: 0.5rem; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; }
+    .landing-main { flex: 1; max-width: 800px; margin: 0 auto; width: 100%; padding: 4rem 2rem; }
+    .landing-hero { margin-bottom: 4rem; }
+    .landing-eyebrow { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); margin-bottom: 1.25rem; }
+    .landing-title { font-size: clamp(2rem, 6vw, 3.5rem); font-weight: 600; line-height: 1.1; letter-spacing: -1px; margin-bottom: 1.25rem; }
+    .landing-subtitle { font-size: 14px; color: var(--text-muted); line-height: 1.7; max-width: 500px; margin-bottom: 2rem; }
+    .landing-cta { font-size: 12px; width: auto; padding: 0.6rem 1.5rem; }
+    .landing-benefits { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.5rem; margin-bottom: 3rem; border-top: 1px solid var(--border); padding-top: 2.5rem; }
+    @media (max-width: 600px) {
+      .landing-benefits { grid-template-columns: 1fr; }
+      .landing-header { padding: 0.75rem 1rem; }
+      .landing-main { padding: 2.5rem 1rem; }
+    }
+    .benefit { padding: 0; }
+    .benefit-num { font-size: 10px; color: var(--text-muted); letter-spacing: 1px; margin-bottom: 0.75rem; }
+    .benefit h3 { font-size: 13px; font-weight: 600; margin-bottom: 0.5rem; }
+    .benefit p { font-size: 12px; color: var(--text-muted); line-height: 1.7; }
+    .landing-note { font-size: 11px; color: var(--text-muted); text-align: center; padding-top: 2rem; border-top: 1px solid var(--border); }
+
     input[type="file"] { display: none; }
   </style>
 </head>
