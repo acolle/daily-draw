@@ -350,6 +350,7 @@ async function handleUpload(file: File) {
   try {
     const fd = new FormData()
     fd.append('image', file)
+    if (activeTeamId) fd.append('teamId', String(activeTeamId))
     await fetch('/api/upload', { method: 'POST', body: fd })
     uploading = false
     const [uploadData, streakData] = await Promise.all([

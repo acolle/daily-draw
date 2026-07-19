@@ -5,7 +5,7 @@ const session = require('express-session')
 const multer = require('multer')
 const path = require('path')
 const db = require('./db')
-const { S3Client, PutObjectCommand, GetObjectCommand } = require('@aws-sdk/client-s3')
+const { S3Client, PutObjectCommand, GetObjectCommand, CopyObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3')
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner')
 const { Resend } = require('resend')
 
@@ -142,14 +142,49 @@ app.get('/api/streaks', requireAuth, (req, res) => {
   res.json({ streaks: db.getAllStreaks() })
 })
 
+// ── R2 path migration (old: uploads/date/user.ext → new: uploads/team-N/date/user.ext) ──
+async function migrateR2Paths() {
+  if (!s3) return
+  const submissions = db.getAllSubmissionsRaw()
+  const toMigrate = submissions.filter(s => !s.r2_key.startsWith('uploads/team-'))
+  if (!toMigrate.length) return
+  console.log(`[migrate] Migrating ${toMigrate.length} R2 object(s) to team-scoped paths...`)
+  for (const sub of toMigrate) {
+    const teams = db.getTeamsForUser(sub.user_id)
+    const teamId = teams[0]?.id
+    if (!teamId) { console.warn(`[migrate] No team for user ${sub.user_id}, skipping`); continue }
+    const filename = sub.r2_key.split('/').pop()
+    const newKey = `uploads/team-${teamId}/${sub.date}/${filename}`
+    try {
+      await s3.send(new CopyObjectCommand({
+        Bucket: process.env.R2_BUCKET_NAME,
+        CopySource: `${process.env.R2_BUCKET_NAME}/${sub.r2_key}`,
+        Key: newKey,
+      }))
+      await s3.send(new DeleteObjectCommand({ Bucket: process.env.R2_BUCKET_NAME, Key: sub.r2_key }))
+      db.updateSubmissionKey(sub.id, newKey)
+      console.log(`[migrate] ${sub.r2_key} → ${newKey}`)
+    } catch (e) {
+      console.error(`[migrate] Failed for ${sub.r2_key}:`, e.message)
+    }
+  }
+  console.log('[migrate] Done.')
+}
+migrateR2Paths()
+
 // ── Upload ────────────────────────────────────────────────────────────────────
 app.post('/api/upload', requireAuth, upload.single('image'), async (req, res) => {
   if (!s3) return res.status(503).json({ error: 'R2 not configured' })
   if (!req.file) return res.status(400).json({ error: 'No file' })
 
+  const teamId = req.body.teamId ? parseInt(req.body.teamId) : null
+  const validTeamId = (teamId && db.isUserInTeam(teamId, req.session.userId))
+    ? teamId
+    : db.getTeamsForUser(req.session.userId)[0]?.id
+
   const ext = req.file.mimetype === 'image/png' ? 'png' : req.file.mimetype === 'image/webp' ? 'webp' : 'jpg'
   const date = todayISO()
-  const key = `uploads/${date}/${req.session.username}.${ext}`
+  const key = `uploads/team-${validTeamId}/${date}/${req.session.username}.${ext}`
 
   await s3.send(new PutObjectCommand({
     Bucket: process.env.R2_BUCKET_NAME,

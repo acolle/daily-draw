@@ -109,6 +109,14 @@ function recordSubmission(userId, date, r2Key) {
   db.prepare('INSERT OR REPLACE INTO submissions (user_id, date, r2_key) VALUES (?, ?, ?)').run(userId, date, r2Key)
 }
 
+function getAllSubmissionsRaw() {
+  return db.prepare('SELECT id, user_id, date, r2_key FROM submissions ORDER BY id').all()
+}
+
+function updateSubmissionKey(id, newKey) {
+  db.prepare('UPDATE submissions SET r2_key = ? WHERE id = ?').run(newKey, id)
+}
+
 function getSubmissionsForDate(date) {
   return db.prepare(`
     SELECT u.username, s.r2_key
@@ -274,6 +282,7 @@ module.exports = {
   recordSubmission, getSubmissionsForDate, getAllDates,
   getStreak, getAllStreaks,
   getTheme, setTheme, getThemesForDates,
+  getAllSubmissionsRaw, updateSubmissionKey,
   createTeam, getTeamById, getTeamsForUser, getTeamMembers, getTeamMemberCount,
   addUserToTeam, isUserInTeam, getTeamUsers, getTeamStreaks,
   getTeamSubmissionsForDate, getTeamDates, seedDefaultTeam,
